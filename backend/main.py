@@ -4,6 +4,8 @@ import httpx
 import re
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
@@ -246,6 +248,16 @@ async def get_history():
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+# Serve frontend
+frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
+if os.path.exists(frontend_dir):
+    app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+
+    @app.get("/")
+    async def serve_frontend():
+        return FileResponse(os.path.join(frontend_dir, "index.html"))
 
 
 if __name__ == "__main__":

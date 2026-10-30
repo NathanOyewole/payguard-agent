@@ -1,11 +1,13 @@
 import os
 import json
 import httpx
+import re
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from dotenv import load_dotenv
+from openai import OpenAI
 
 load_dotenv()
 
@@ -15,6 +17,13 @@ app = FastAPI(title="PayGuard Agent")
 PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
 PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "")
 PAYPAL_BASE_URL = "https://api-m.sandbox.paypal.com"
+
+# Oxion AI config (OpenAI-compatible)
+OXION_API_KEY = os.getenv("OXION_API_KEY", "")
+OXION_BASE_URL = "https://www.oxionai.com/v1"
+OXION_MODEL = os.getenv("OXION_MODEL", "deepseek-v4-flash-0731")
+
+ai_client = OpenAI(api_key=OXION_API_KEY, base_url=OXION_BASE_URL) if OXION_API_KEY else None
 
 # In-memory transaction history for fraud detection
 transaction_history = []
@@ -78,7 +87,7 @@ async def create_paypal_payment(amount: float, recipient: str, purpose: str = ""
 
 
 def analyze_fraud(amount: float, recipient: str, purpose: str = "") -> FraudResult:
-    """Run fraud detection heuristics on a payment."""
+    """Run fraud detection heuristics + AI reasoning on a payment."""
     flags = []
     risk_score = 0
 
@@ -131,7 +140,26 @@ def analyze_fraud(amount: float, recipient: str, purpose: str = "") -> FraudResu
         risk_level = "low"
         recommendation = "approve"
 
-    explanation = f"Risk score: {risk_score}/100. " + ("; ".join(flags) if flags else "No fraud signals detected.")
+    # AI-powered explanation (Oxion)
+    if ai_client and flags:
+        try:
+            resp = ai_client.chat.completions.create(
+                model=OXION_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a fraud analyst. Given payment details and risk flags, write a concise 1-2 sentence plain-English explanation of why this payment is risky and what the user should do. Be direct and helpful."},
+                    {"role": "user", "content": f"Payment: ${amount} to {recipient} for '{purpose}'. Risk score: {risk_score}/100. Flags: {'; '.join(flags)}"},
+                ],
+            )
+            ai_explanation = resp.choices[0].message.content.strip()
+        except Exception:
+            ai_explanation = None
+    else:
+        ai_explanation = None
+
+    if ai_explanation:
+        explanation = ai_explanation
+    else:
+        explanation = f"Risk score: {risk_score}/100. " + ("; ".join(flags) if flags else "No fraud signals detected.")
 
     return FraudResult(
         risk_score=risk_score,
@@ -144,23 +172,35 @@ def analyze_fraud(amount: float, recipient: str, purpose: str = "") -> FraudResu
 
 @app.post("/api/parse-intent")
 async def parse_intent(intent: PaymentIntent):
-    """Parse natural language into structured payment request using AI."""
-    # Simple parsing (replace with LLM call in production)
+    """Parse natural language into structured payment request using AI (Oxion)."""
+    if ai_client:
+        try:
+            resp = ai_client.chat.completions.create(
+                model=OXION_MODEL,
+                messages=[
+                    {"role": "system", "content": "Extract payment details from the user's message. Return JSON with keys: amount (number), recipient (email or name), purpose (string). If any field is missing, use null."},
+                    {"role": "user", "content": intent.text},
+                ],
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(resp.choices[0].message.content)
+            return PaymentRequest(
+                amount=float(data.get("amount") or 0),
+                recipient=data.get("recipient") or "",
+                purpose=data.get("purpose") or "",
+            )
+        except Exception as e:
+            pass  # Fall through to regex
+
+    # Fallback: regex parsing
     text = intent.text.lower()
-    # Extract amount
-    import re
     amount_match = re.search(r'\$?(\d+(?:\.\d{2})?)', text)
     amount = float(amount_match.group(1)) if amount_match else 0
-
-    # Extract recipient (email pattern)
     email_match = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', text)
     recipient = email_match.group(0) if email_match else ""
-
-    # Extract purpose
     purpose = ""
     if "for" in text:
         purpose = text.split("for", 1)[-1].strip()
-
     return PaymentRequest(amount=amount, recipient=recipient, purpose=purpose)
 
 

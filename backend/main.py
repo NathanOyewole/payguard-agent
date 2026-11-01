@@ -20,12 +20,12 @@ PAYPAL_CLIENT_ID = os.getenv("PAYPAL_CLIENT_ID", "")
 PAYPAL_CLIENT_SECRET = os.getenv("PAYPAL_CLIENT_SECRET", "")
 PAYPAL_BASE_URL = "https://api-m.sandbox.paypal.com"
 
-# Oxion AI config (OpenAI-compatible)
-OXION_API_KEY = os.getenv("OXION_API_KEY", "")
-OXION_BASE_URL = "https://www.oxionai.com/v1"
-OXION_MODEL = os.getenv("OXION_MODEL", "deepseek-v4-flash-0731")
+# OpenRouter AI config (OpenAI-compatible)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OXION_BASE_URL = "https://openrouter.ai/api/v1"
+OXION_MODEL = os.getenv("OPENROUTER_MODEL", "openrouter/free")
 
-ai_client = OpenAI(api_key=OXION_API_KEY, base_url=OXION_BASE_URL) if OXION_API_KEY else None
+ai_client = OpenAI(api_key=OPENROUTER_API_KEY, base_url=OXION_BASE_URL) if OPENROUTER_API_KEY else None
 
 # In-memory transaction history for fraud detection
 transaction_history = []
@@ -251,7 +251,7 @@ async def health():
 
 
 # Serve frontend
-frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
+frontend_dir = os.path.join(os.path.dirname(__file__))
 if os.path.exists(frontend_dir):
     app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 

@@ -5,4 +5,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ .
 COPY frontend/ /app/frontend/
 EXPOSE 7860
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-7860}"]
